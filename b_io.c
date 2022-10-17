@@ -31,7 +31,7 @@ typedef struct b_fcb
 	fileInfo * fi;	//holds the low level systems file info
 
 	// Add any other needed variables here to track the individual open file
-
+	char * buffer;
 
 
 	} b_fcb;
@@ -85,8 +85,14 @@ b_io_fd b_open (char * filename, int flags)
 	//*** TODO ***:  Write open function to return your file descriptor
 	//				 You may want to allocate the buffer here as well
 	//				 But make sure every file has its own buffer
-
+	
 	// This is where you are going to want to call GetFileInfo and b_getFCB
+	b_io_fd fd = b_getFCB();
+	fcbArray[fd].fi = GetFileInfo(filename);
+	fcbArray[fd].buffer = malloc(B_CHUNK_SIZE);
+	printf("Filename: '%s'\nFile Size: %d\nLocation: %d\n", 
+		fcbArray[fd].fi->fileName, fcbArray[fd].fi->fileSize, fcbArray[fd].fi->location);
+	return fd;
 	}
 
 // b_read functions just like its Linux counterpart read.  The user passes in
@@ -115,6 +121,8 @@ int b_read (b_io_fd fd, char * buffer, int count)
 		return -1;
 		}	
 
+	LBAread(buffer, 0, 0);
+	return 0;
 	// Your Read code here - the only function you call to get data is LBAread.
 	// Track which byte in the buffer you are at, and which block in the file	
 	}
@@ -123,6 +131,7 @@ int b_read (b_io_fd fd, char * buffer, int count)
 // into the unused pool of file control blocks.
 int b_close (b_io_fd fd)
 	{
+		return 0;
 	//*** TODO ***:  Release any resources
 	}
 	
