@@ -1,13 +1,14 @@
 /**************************************************************
-* Class:  CSC-415-0# Fall 2022
-* Name:
-* Student ID:
-* GitHub UserID:
+* Class:  CSC-415-02 Fall 2022
+* Name: Mark Kim
+* Student ID: 918204214
+* GitHub UserID: mkim797
 * Project: Assignment 5 – Buffered I/O
 *
 * File: b_io.c
 *
 * Description:
+* 
 *
 **************************************************************/
 #include <stdio.h>
