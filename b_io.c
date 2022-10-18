@@ -97,8 +97,8 @@ b_io_fd b_open (char * filename, int flags)
 	
 	fcbArray[fd].fi = GetFileInfo(filename);
 	fcbArray[fd].buffer = malloc(B_CHUNK_SIZE);
-	printf("Filename: '%s'\nFile Size: %d\nLocation: %d\n", 
-		fcbArray[fd].fi->fileName, fcbArray[fd].fi->fileSize, fcbArray[fd].fi->location);
+	// printf("Filename: '%s'\nFile Size: %d\nLocation: %d\n", 
+	// 	fcbArray[fd].fi->fileName, fcbArray[fd].fi->fileSize, fcbArray[fd].fi->location);
 	return fd;
 	}
 
@@ -129,11 +129,31 @@ int b_read (b_io_fd fd, char * buffer, int count)
 		}
 
 	int num_blocks = blocks_needed(count);
+	int rem_blocks = num_blocks;
 	int bytes_read = 0;
+	int tot_bytes_read = 0;
+	int rem_bytes = count;
 	int loc = fcbArray[fd].fi->location;
-	bytes_read += LBAread(buffer, 1, loc++);
+	printf("Filename: %s\nLoc: %d\nNum_Bytes: %d\nNum_Blocks: %d\n", 
+		fcbArray[fd].fi->fileName, loc, count, num_blocks);
+
+	for (int i = 0; i < num_blocks; i++)
+	{
+		bytes_read = LBAread(fcbArray[fd].buffer, 1, loc);
+		loc++;
+		tot_bytes_read += bytes_read;
+		// rem_blocks = blocks_needed(--count);
+		// if (rem_bytes <= B_CHUNK_SIZE)
+		// {
+		// 	memcpy(buffer, fcbArray[fd].buffer, rem_bytes);
+		// } 
+		// else
+		// {
+		// 	memcpy(buffer, fcbArray[fd].buffer, bytes_read);
+		// }
+	}
 	// bytes_requested modulo 512 gives final byte count.
-	printf("bytes: %d\n", bytes_read);
+	// printf("bytes: %d\n", tot_bytes_read);
 	return 0;
 	// Your Read code here - the only function you call to get data is LBAread.
 	// Track which byte in the buffer you are at, and which block in the file	
