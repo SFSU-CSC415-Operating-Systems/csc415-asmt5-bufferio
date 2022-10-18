@@ -23,7 +23,7 @@ Let me remind you of the expectations.  Code should be neat, well documented.  V
 
 This is an INDIVIDUAL assignment.  You can (and should) work in groups to research how to do the assignment, but each person must code their own version and make their own submission.
 
-This assignment is to get you to handle buffered IO where you do the buffering.  
+This assignment is to get you to handle bfuffered IO where you do the buffering.  
 
 You will see in this assignment that you may question why you are doing operations the way specified here in the assignment.  This is because we are writing a buffering I/O.  We will see later in file system project how important this is.
 

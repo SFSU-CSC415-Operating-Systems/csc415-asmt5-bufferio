@@ -22,6 +22,7 @@
 
 #define MAXFCBS 20	//The maximum number of files open at one time
 
+int blocks_needed (int bytes);
 
 // This structure is all the information needed to maintain an open file
 // It contains a pointer to a fileInfo strucutre and any other information
@@ -88,6 +89,12 @@ b_io_fd b_open (char * filename, int flags)
 	
 	// This is where you are going to want to call GetFileInfo and b_getFCB
 	b_io_fd fd = b_getFCB();
+
+	if (fd == -1) 
+		{
+		return fd;
+		}
+	
 	fcbArray[fd].fi = GetFileInfo(filename);
 	fcbArray[fd].buffer = malloc(B_CHUNK_SIZE);
 	printf("Filename: '%s'\nFile Size: %d\nLocation: %d\n", 
@@ -119,9 +126,14 @@ int b_read (b_io_fd fd, char * buffer, int count)
 	if (fcbArray[fd].fi == NULL)		//File not open for this descriptor
 		{
 		return -1;
-		}	
+		}
 
-	LBAread(buffer, 0, 0);
+	int num_blocks = blocks_needed(count);
+	int bytes_read = 0;
+	int loc = fcbArray[fd].fi->location;
+	bytes_read += LBAread(buffer, 1, loc++);
+	// bytes_requested modulo 512 gives final byte count.
+	printf("bytes: %d\n", bytes_read);
 	return 0;
 	// Your Read code here - the only function you call to get data is LBAread.
 	// Track which byte in the buffer you are at, and which block in the file	
@@ -131,7 +143,15 @@ int b_read (b_io_fd fd, char * buffer, int count)
 // into the unused pool of file control blocks.
 int b_close (b_io_fd fd)
 	{
+		// for (int i = 0; i < )
 		return 0;
 	//*** TODO ***:  Release any resources
 	}
 	
+int blocks_needed (int bytes) {
+	return (bytes + B_CHUNK_SIZE - 1)/B_CHUNK_SIZE;
+}
+
+int bytes_needed (int blocks) {
+	return (blocks + 7)/8;
+}
