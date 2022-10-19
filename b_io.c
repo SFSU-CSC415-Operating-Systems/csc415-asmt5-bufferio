@@ -39,6 +39,7 @@ typedef struct b_fcb
 	int bytes_in_buffer;
 
 	int block_offset; 	// current offset from starting lba for file data; -1 if reached EOF
+	int bytes_read;
 
 	} b_fcb;
 	
@@ -113,6 +114,7 @@ b_io_fd b_open (char * filename, int flags)
 	fcbArray[fd].buffer_offset = 0;
 	fcbArray[fd].block_offset = 0;
 	fcbArray[fd].bytes_in_buffer = 0;
+	fcbArray[fd].bytes_read = 0;
 
 	return fd;
 	}
@@ -143,88 +145,166 @@ int b_read (b_io_fd fd, char * buffer, int count)
 		return -1;
 		}
 	
+	// EOF reached
 	if (fcbArray[fd].block_offset == -1)
 		{
 		return 0;
 		}
 
+	// nothing in buffer, read into buffer and increment block_offset
+	if (fcbArray[fd].bytes_in_buffer == 0)
+		{
+		fcbArray[fd].bytes_in_buffer = LBAread(fcbArray[fd].buffer, 1, 
+			fcbArray[fd].fi->location + fcbArray[fd].block_offset++);
+		fcbArray[fd].buffer_offset = 0;
+		}
+
+	// initialize buffer_remaining to whatever is in buffer minus the current position in buffer.
 	int buffer_remaining = B_CHUNK_SIZE - fcbArray[fd].buffer_offset;
 	int bytes_copied = 0;
 
-	if (fcbArray[fd].bytes_in_buffer == 0)
+	// if the current block is the EOF, then set buffer_remaining to what is left in file.
+	if (fcbArray[fd].fi->fileSize - fcbArray[fd].bytes_read <= B_CHUNK_SIZE)
 		{
-		// printf("File: %s\nLoc: %d\nBlock Offset: %d\n", fcbArray[fd].fi->fileName, fcbArray[fd].fi->location, fcbArray[fd].block_offset);
-		fcbArray[fd].bytes_in_buffer = LBAread(fcbArray[fd].buffer, 1, 
-			fcbArray[fd].fi->location + fcbArray[fd].block_offset++);
-		fcbArray[fd].buffer_offset = 0;
-		if (fcbArray[fd].bytes_in_buffer < count)
-			{
-			memcpy(buffer, fcbArray[fd].buffer, fcbArray[fd].bytes_in_buffer);
-			bytes_copied = fcbArray[fd].bytes_in_buffer;
-			fcbArray[fd].buffer_offset = fcbArray[fd].block_offset = -1;
-			return bytes_copied;
-			}
+		buffer_remaining = fcbArray[fd].fi->fileSize - 
+			fcbArray[fd].bytes_read - fcbArray[fd].buffer_offset;
 		}
-
-	if (count < buffer_remaining)
+	
+	// Guard clause: if the caller's request is less than the buffer remaining, 
+	// just copy the request into caller's buffer.  Then return the bytes copied over.
+	if (count <= buffer_remaining)
 		{
 		memcpy(buffer, fcbArray[fd].buffer + fcbArray[fd].buffer_offset, count);
 		fcbArray[fd].buffer_offset += count;
-		bytes_copied = count;
+		fcbArray[fd].bytes_read += count;
+		return count;
 		}
 
-	else
+	// These cases are all for when the request is greater than what is remaining in buffer
+	
+	// Guard clause: If we are in the last block, simply copy the remaining buffer into 
+	// caller's buffer because the caller's request is greater than what is left in the file.
+	// Then return.
+	if (fcbArray[fd].fi->fileSize - fcbArray[fd].bytes_read <= B_CHUNK_SIZE)
 		{
-		// calculate the number of blocks needed after depleting the remaining buffer
-		int num_blocks = blocks_needed(count - buffer_remaining);
-
-		// copy the portion of the count that will deplete the fcb buffer
 		memcpy(buffer, fcbArray[fd].buffer + fcbArray[fd].buffer_offset, buffer_remaining);
+		fcbArray[fd].buffer_offset = fcbArray[fd].block_offset = -1;
+		fcbArray[fd].bytes_read += buffer_remaining;
+		return buffer_remaining;
+		}
 
-		// track the number of bytes copied from fcb buffer to provided buffer
-		bytes_copied = buffer_remaining;
+	// Copy whatever is remaining in the current block into caller's buffer and recalculate
+	// the count find what else is left.
+	memcpy(buffer, fcbArray[fd].buffer + fcbArray[fd].buffer_offset, buffer_remaining);
+	fcbArray[fd].bytes_read += buffer_remaining;
+	bytes_copied += buffer_remaining;
+	count -= buffer_remaining;
 
-		// read next block and increment the block to the next block
+	// Blocks needed is dependent on whether the caller's request is greater than what is
+	// left in the file.
+	// First case: the call is greater than what is left; copy the rest of the file.
+	int blks_needed = 0;
+	if (count > fcbArray[fd].fi->fileSize - fcbArray[fd].bytes_read)
+		{
+		blks_needed = blocks_needed(fcbArray[fd].fi->fileSize - fcbArray[fd].bytes_read);
+		fcbArray[fd].buffer_offset = 0;
+		for (int i = 0; i < blks_needed - 1; i++)
+			{
+			fcbArray[fd].bytes_in_buffer = LBAread(fcbArray[fd].buffer, 1, 
+				fcbArray[fd].fi->location + fcbArray[fd].block_offset++);
+			memcpy(buffer, fcbArray[fd].buffer, B_CHUNK_SIZE);
+			fcbArray[fd].bytes_read += B_CHUNK_SIZE;
+			bytes_copied += B_CHUNK_SIZE;
+			count -= B_CHUNK_SIZE;
+			}
+		
+		}
+	int blks_needed = blocks_needed(count);
+
+	for (int i = 0; i < blks_needed - 1; i++)
+		{
 		fcbArray[fd].bytes_in_buffer = LBAread(fcbArray[fd].buffer, 1, 
 			fcbArray[fd].fi->location + fcbArray[fd].block_offset++);
 		fcbArray[fd].buffer_offset = 0;
 
-		if (fcbArray[fd].bytes_in_buffer < B_CHUNK_SIZE)
-			{
-			memcpy(buffer, fcbArray[fd].buffer, fcbArray[fd].bytes_in_buffer);
-			bytes_copied += fcbArray[fd].bytes_in_buffer;
-			fcbArray[fd].buffer_offset = fcbArray[fd].block_offset = -1;
-			return bytes_copied;
-			}
+		}
+
+	// if (fcbArray[fd].fi->fileSize - fcbArray[fd].bytes_read <= B_CHUNK_SIZE)
+	// 	{
+	// 	fcbArray[fd].buffer_offset = fcbArray[fd].block_offset = -1;
+	// 	memcpy(buffer, fcbArray[fd].buffer, fcbArray[fd].fi->fileSize - fcbArray[fd].bytes_read);
+	// 	bytes_copied = fcbArray[fd].fi->fileSize - fcbArray[fd].bytes_read;
+	// 	return bytes_copied;
+	// 	}
+	
+	// fcbArray[fd].buffer_offset = 0;
+	// if (fcbArray[fd].bytes_in_buffer < count)
+	// 	{
+	// 	memcpy(buffer, fcbArray[fd].buffer, fcbArray[fd].bytes_in_buffer);
+	// 	bytes_copied = fcbArray[fd].bytes_in_buffer;
+	// 	fcbArray[fd].buffer_offset = fcbArray[fd].block_offset = -1;
+	// 	return bytes_copied;
+	// 	}
+
+	// if (count < buffer_remaining)
+	// 	{
+	// 	memcpy(buffer, fcbArray[fd].buffer + fcbArray[fd].buffer_offset, count);
+	// 	fcbArray[fd].buffer_offset += count;
+	// 	bytes_copied = count;
+	// 	}
+
+	// else
+	// 	{
+	// 	// calculate the number of blocks needed after depleting the remaining buffer
+	// 	int num_blocks = blocks_needed(count - buffer_remaining);
+
+	// 	// copy the portion of the count that will deplete the fcb buffer
+	// 	memcpy(buffer, fcbArray[fd].buffer + fcbArray[fd].buffer_offset, buffer_remaining);
+
+	// 	// track the number of bytes copied from fcb buffer to provided buffer
+	// 	bytes_copied = buffer_remaining;
+
+	// 	// read next block and increment the block to the next block
+	// 	fcbArray[fd].bytes_in_buffer = LBAread(fcbArray[fd].buffer, 1, 
+	// 		fcbArray[fd].fi->location + fcbArray[fd].block_offset++);
+	// 	fcbArray[fd].buffer_offset = 0;
+
+	// 	if (fcbArray[fd].bytes_in_buffer < B_CHUNK_SIZE)
+	// 		{
+	// 		memcpy(buffer, fcbArray[fd].buffer, fcbArray[fd].bytes_in_buffer);
+	// 		bytes_copied += fcbArray[fd].bytes_in_buffer;
+	// 		fcbArray[fd].buffer_offset = fcbArray[fd].block_offset = -1;
+	// 		return bytes_copied;
+	// 		}
 			
 
-		// calculate the final number of bytes to copy over after supplying complete blocks
-		int last_bytes = (count - buffer_remaining) % B_CHUNK_SIZE;
+	// 	// calculate the final number of bytes to copy over after supplying complete blocks
+	// 	int last_bytes = (count - buffer_remaining) % B_CHUNK_SIZE;
 
-		// copy full blocks into the buffer
-		for (int i = 0; i < num_blocks - 1; i++)
-			{
-			memcpy(buffer, fcbArray[fd].buffer, B_CHUNK_SIZE);
-			bytes_copied += B_CHUNK_SIZE;
-			fcbArray[fd].bytes_in_buffer = LBAread(fcbArray[fd].buffer, 1, 
-				fcbArray[fd].fi->location + fcbArray[fd].block_offset++);
+	// 	// copy full blocks into the buffer
+	// 	for (int i = 0; i < num_blocks - 1; i++)
+	// 		{
+	// 		memcpy(buffer, fcbArray[fd].buffer, B_CHUNK_SIZE);
+	// 		bytes_copied += B_CHUNK_SIZE;
+	// 		fcbArray[fd].bytes_in_buffer = LBAread(fcbArray[fd].buffer, 1, 
+	// 			fcbArray[fd].fi->location + fcbArray[fd].block_offset++);
 	
-			if (fcbArray[fd].bytes_in_buffer < B_CHUNK_SIZE)
-				{
-				memcpy(buffer, fcbArray[fd].buffer, fcbArray[fd].bytes_in_buffer);
-				bytes_copied += fcbArray[fd].bytes_in_buffer;
-				fcbArray[fd].buffer_offset = fcbArray[fd].block_offset = -1;
-				return bytes_copied;
-				}
-			}
+	// 		if (fcbArray[fd].bytes_in_buffer < B_CHUNK_SIZE)
+	// 			{
+	// 			memcpy(buffer, fcbArray[fd].buffer, fcbArray[fd].bytes_in_buffer);
+	// 			bytes_copied += fcbArray[fd].bytes_in_buffer;
+	// 			fcbArray[fd].buffer_offset = fcbArray[fd].block_offset = -1;
+	// 			return bytes_copied;
+	// 			}
+	// 		}
 
-		// copy remaining bytes into buffer
-		memcpy(buffer, fcbArray[fd].buffer, last_bytes);
-		bytes_copied += last_bytes;
-		fcbArray[fd].buffer_offset = last_bytes;
-		}
+	// 	// copy remaining bytes into buffer
+	// 	memcpy(buffer, fcbArray[fd].buffer, last_bytes);
+	// 	bytes_copied += last_bytes;
+	// 	fcbArray[fd].buffer_offset = last_bytes;
+	// 	}
 	
-	return bytes_copied;
+	// return bytes_copied;
 	// Your Read code here - the only function you call to get data is LBAread.
 	// Track which byte in the buffer you are at, and which block in the file	
 	}
