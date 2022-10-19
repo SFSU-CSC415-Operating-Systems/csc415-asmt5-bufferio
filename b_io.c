@@ -166,8 +166,10 @@ int b_read (b_io_fd fd, char * buffer, int count)
 	// if the current block is the EOF, then set buffer_remaining to what is left in file.
 	if (fcbArray[fd].fi->fileSize - fcbArray[fd].bytes_read <= B_CHUNK_SIZE)
 		{
+		// printf("CUR BLOCK EOF:\nFilename: %s\nFile Size: %d\nBytes Read: %d\nBuffer Offset: %d\n",
+		// 	fcbArray[fd].fi->fileName, fcbArray[fd].fi->fileSize, fcbArray[fd].bytes_read, fcbArray[fd].buffer_offset);
 		buffer_remaining = fcbArray[fd].fi->fileSize - 
-			fcbArray[fd].bytes_read - fcbArray[fd].buffer_offset;
+			fcbArray[fd].bytes_read;
 		}
 	
 	// Guard clause: if the caller's request is less than the buffer remaining, 
@@ -187,14 +189,19 @@ int b_read (b_io_fd fd, char * buffer, int count)
 	// Then return.
 	if (fcbArray[fd].fi->fileSize - fcbArray[fd].bytes_read <= B_CHUNK_SIZE)
 		{
+		// printf("LAST BLOCK:\nFilename: %s\nFilesize: %d\nBytes_read: %d\n", 
+		// 	fcbArray[fd].fi->fileName, 
+		// 	fcbArray[fd].fi->fileSize, fcbArray[fd].bytes_read);
 		memcpy(buffer, fcbArray[fd].buffer + fcbArray[fd].buffer_offset, buffer_remaining);
 		fcbArray[fd].buffer_offset = fcbArray[fd].block_offset = -1;
 		fcbArray[fd].bytes_read += buffer_remaining;
 		return buffer_remaining;
 		}
 
+	// These are the cases if we are NOT in the last block
+
 	// Copy whatever is remaining in the current block into caller's buffer and recalculate
-	// the count find what else is left.
+	// the count find what else is left in the call.
 	memcpy(buffer, fcbArray[fd].buffer + fcbArray[fd].buffer_offset, buffer_remaining);
 	fcbArray[fd].bytes_read += buffer_remaining;
 	bytes_copied += buffer_remaining;
@@ -202,7 +209,8 @@ int b_read (b_io_fd fd, char * buffer, int count)
 
 	// Blocks needed is dependent on whether the caller's request is greater than what is
 	// left in the file.
-	// First case: the call is greater than what is left; copy the rest of the file.
+	// First case (Guard clause): the call is greater than what is left; copy the rest of 
+	// the file.
 	int blks_needed = 0;
 	if (count > fcbArray[fd].fi->fileSize - fcbArray[fd].bytes_read)
 		{
@@ -217,18 +225,39 @@ int b_read (b_io_fd fd, char * buffer, int count)
 			bytes_copied += B_CHUNK_SIZE;
 			count -= B_CHUNK_SIZE;
 			}
-		
+		fcbArray[fd].bytes_in_buffer = LBAread(fcbArray[fd].buffer, 1, 
+				fcbArray[fd].fi->location + fcbArray[fd].block_offset++);
+		memcpy(buffer, fcbArray[fd].buffer, count);
+		fcbArray[fd].buffer_offset = fcbArray[fd].block_offset = -1;
+		fcbArray[fd].bytes_read += count;
+		bytes_copied += count;
+		return bytes_copied;
 		}
-	int blks_needed = blocks_needed(count);
 
+	// Last case: the call is less than or equal to what is left in file; copy everything 
+	// the caller asks for.
+
+	// Calculate blocks needed, copy full blocks to caller's buffer, then copy whatever is
+	// remaining.
+	blks_needed = blocks_needed(count);
+	fcbArray[fd].buffer_offset = 0;
 	for (int i = 0; i < blks_needed - 1; i++)
 		{
 		fcbArray[fd].bytes_in_buffer = LBAread(fcbArray[fd].buffer, 1, 
 			fcbArray[fd].fi->location + fcbArray[fd].block_offset++);
-		fcbArray[fd].buffer_offset = 0;
-
+		memcpy(buffer, fcbArray[fd].buffer, B_CHUNK_SIZE);
+		fcbArray[fd].bytes_read += B_CHUNK_SIZE;
+		bytes_copied += B_CHUNK_SIZE;
+		count -= B_CHUNK_SIZE;
 		}
+	fcbArray[fd].bytes_in_buffer = LBAread(fcbArray[fd].buffer, 1, 
+				fcbArray[fd].fi->location + fcbArray[fd].block_offset++);
+	memcpy(buffer, fcbArray[fd].buffer, count);
+	fcbArray[fd].bytes_read += count;
+	fcbArray[fd].buffer_offset += count;
+	bytes_copied += count;
 
+	return bytes_copied;
 	// if (fcbArray[fd].fi->fileSize - fcbArray[fd].bytes_read <= B_CHUNK_SIZE)
 	// 	{
 	// 	fcbArray[fd].buffer_offset = fcbArray[fd].block_offset = -1;
