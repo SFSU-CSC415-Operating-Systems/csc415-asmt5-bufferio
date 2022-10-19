@@ -34,11 +34,12 @@ typedef struct b_fcb
 	fileInfo * fi;	//holds the low level systems file info
 
 	// Add any other needed variables here to track the individual open file
-	char * buffer; 	// buffer for open file
+	char * buffer; 		// buffer for open file
 	int buffer_offset;	// current offset in buffer; -1 if reached EOF
-	int bytes_in_buffer;
+	int bytes_in_buffer;// number of bytes loaded into buffer
 
 	int block_offset; 	// current offset from starting lba for file data; -1 if reached EOF
+	int bytes_read;		// to track how many bytes have been read
 
 	} b_fcb;
 	
@@ -113,6 +114,7 @@ b_io_fd b_open (char * filename, int flags)
 	fcbArray[fd].buffer_offset = 0;
 	fcbArray[fd].block_offset = 0;
 	fcbArray[fd].bytes_in_buffer = 0;
+	fcbArray[fd].bytes_read = 0;
 
 	return fd;
 	}
@@ -143,8 +145,9 @@ int b_read (b_io_fd fd, char * buffer, int count)
 		return -1;
 		}
 	
-	if (fcbArray[fd].block_offset == -1)
+	if (fcbArray[fd].bytes_read == fcbArray[fd].fi->fileSize)
 		{
+		fcbArray[fd].bytes_read = 0;
 		return 0;
 		}
 
@@ -161,7 +164,8 @@ int b_read (b_io_fd fd, char * buffer, int count)
 			{
 			memcpy(buffer, fcbArray[fd].buffer, fcbArray[fd].bytes_in_buffer);
 			bytes_copied = fcbArray[fd].bytes_in_buffer;
-			fcbArray[fd].buffer_offset = fcbArray[fd].block_offset = -1;
+			fcbArray[fd].bytes_read += bytes_copied;
+			fcbArray[fd].buffer_offset = fcbArray[fd].block_offset = 0;
 			return bytes_copied;
 			}
 		}
@@ -193,7 +197,8 @@ int b_read (b_io_fd fd, char * buffer, int count)
 			{
 			memcpy(buffer, fcbArray[fd].buffer, fcbArray[fd].bytes_in_buffer);
 			bytes_copied += fcbArray[fd].bytes_in_buffer;
-			fcbArray[fd].buffer_offset = fcbArray[fd].block_offset = -1;
+			fcbArray[fd].buffer_offset = fcbArray[fd].block_offset = 0;
+			fcbArray[fd].bytes_read += bytes_copied;
 			return bytes_copied;
 			}
 			
@@ -214,6 +219,7 @@ int b_read (b_io_fd fd, char * buffer, int count)
 				memcpy(buffer, fcbArray[fd].buffer, fcbArray[fd].bytes_in_buffer);
 				bytes_copied += fcbArray[fd].bytes_in_buffer;
 				fcbArray[fd].buffer_offset = fcbArray[fd].block_offset = -1;
+				fcbArray[fd].bytes_read += bytes_copied;
 				return bytes_copied;
 				}
 			}
@@ -224,6 +230,7 @@ int b_read (b_io_fd fd, char * buffer, int count)
 		fcbArray[fd].buffer_offset = last_bytes;
 		}
 	
+	fcbArray[fd].bytes_read += bytes_copied;
 	return bytes_copied;
 	// Your Read code here - the only function you call to get data is LBAread.
 	// Track which byte in the buffer you are at, and which block in the file	
