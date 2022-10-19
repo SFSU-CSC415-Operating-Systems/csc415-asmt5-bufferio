@@ -162,6 +162,7 @@ int b_read (b_io_fd fd, char * buffer, int count)
 		fcbArray[fd].buffer_offset = 0;
 		if (fcbArray[fd].bytes_in_buffer < count)
 			{
+			printf("Bytes in Buffer EOF: %d", fcbArray[fd].bytes_in_buffer);
 			memcpy(buffer, fcbArray[fd].buffer, fcbArray[fd].bytes_in_buffer);
 			bytes_copied = fcbArray[fd].bytes_in_buffer;
 			fcbArray[fd].bytes_read += bytes_copied;
