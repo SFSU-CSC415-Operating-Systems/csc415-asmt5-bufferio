@@ -166,9 +166,12 @@ int b_read (b_io_fd fd, char * buffer, int count)
 		return 0;
 		}
 
+	// If requested bytes is greater than the amount left in file reset count
+	// to what is left in file.
 	if (count > fcbArray[fd].fi->fileSize - fcbArray[fd].bytes_read)
 		{
 		count = fcbArray[fd].fi->fileSize - fcbArray[fd].bytes_read;
+		// printf("\t\tNew count: %d\n", count);
 		}
 	
 	// Nothing in buffer, get next block
@@ -180,22 +183,33 @@ int b_read (b_io_fd fd, char * buffer, int count)
 	int bytes_copied = 0;
 	int bytes_remaining = 0;
 
-	if (fcbArray[fd].block_offset < fcbArray[fd].tot_full_blocks)
-		{
-		bytes_remaining = B_CHUNK_SIZE - fcbArray[fd].buffer_offset;
-		}
-	else
+	// If EOF, set bytes remaining to what is left in file otherwise whatever is
+	// left in buffer.
+	if (fcbArray[fd].block_offset == fcbArray[fd].tot_full_blocks)
 		{
 		bytes_remaining = fcbArray[fd].fi->fileSize - fcbArray[fd].bytes_read;
 		}
-
-	if (count <= bytes_remaining)
+	else
 		{
-		if (count == bytes_remaining && fcbArray[fd].block_offset >= fcbArray[fd].tot_full_blocks)
-			fcbArray[fd].block_offset = -1;
-		return transfer_buffer(fd, buffer, count, fcbArray[fd].buffer_offset);
+		bytes_remaining = B_CHUNK_SIZE - fcbArray[fd].buffer_offset;
 		}
 
+	// If requested bytes is less than what is remaining, just copy the requested amount
+	if (count <= bytes_remaining)
+		{
+		bytes_copied = transfer_buffer(fd, buffer, count, fcbArray[fd].buffer_offset);
+
+		// If the count is exactly what is remaining, get next LBA block
+		if (count == bytes_remaining)
+			{
+			get_next_LBA_block(fd);
+			if (fcbArray[fd].block_offset == fcbArray[fd].tot_full_blocks)
+				fcbArray[fd].block_offset = -1;  // EOF
+			}
+		return bytes_copied;
+		}
+
+	// 
 	transfer_buffer(fd, buffer, bytes_remaining, fcbArray[fd].buffer_offset);
 	bytes_copied += bytes_remaining;
 	count -= bytes_remaining;
@@ -204,7 +218,8 @@ int b_read (b_io_fd fd, char * buffer, int count)
 	for (int i = 0; i < blocks_needed; i++)
 		{
 		get_next_LBA_block(fd);
-		transfer_buffer(fd, buffer, B_CHUNK_SIZE, 0);
+		transfer_buffer(fd, buffer, B_CHUNK_SIZE, fcbArray[fd].buffer_offset);
+		fcbArray[fd].buffer_offset = 0;
 		bytes_copied += B_CHUNK_SIZE;
 		count -= B_CHUNK_SIZE;
 		}
@@ -212,13 +227,14 @@ int b_read (b_io_fd fd, char * buffer, int count)
 	if (count != 0)
 		{
 		get_next_LBA_block(fd);
-		transfer_buffer(fd, buffer, count, 0);
+		transfer_buffer(fd, buffer, count, fcbArray[fd].buffer_offset);
 		bytes_copied += count;
 		count = 0;
 		}
 
 	return bytes_copied;
-	
+	}
+
 // b_close frees and allocated memory and places the file control block back 
 // into the unused pool of file control blocks.
 int b_close (b_io_fd fd)
