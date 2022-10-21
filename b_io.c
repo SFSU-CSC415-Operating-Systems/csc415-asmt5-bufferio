@@ -164,6 +164,11 @@ int b_read (b_io_fd fd, char * buffer, int count)
 		return 0;
 		}
 
+	if (count > fcbArray[fd].fi->fileSize - fcbArray[fd].bytes_read)
+		{
+		count = fcbArray[fd].fi->fileSize - fcbArray[fd].bytes_read;
+		}
+	
 	// Nothing in buffer, get next block
 	if (fcbArray[fd].bytes_in_buffer == 0)
 		{
@@ -174,8 +179,8 @@ int b_read (b_io_fd fd, char * buffer, int count)
 	// buffer or the remaining bytes in the file depending on whether we are
 	// currently in the last block in file.
 	int buffer_remaining = 
-		(fcbArray[fd].fi->fileSize - fcbArray[fd].bytes_read <= B_CHUNK_SIZE)
-		? fcbArray[fd].fi->fileSize - fcbArray[fd].bytes_read 
+		(fcbArray[fd].fi->fileSize - fcbArray[fd].bytes_read + fcbArray[fd].buffer_offset < B_CHUNK_SIZE)
+		? fcbArray[fd].fi->fileSize - fcbArray[fd].bytes_read
 		: B_CHUNK_SIZE - fcbArray[fd].buffer_offset;
 
 	// Initialize counter of bytes copied to return per specifications.
@@ -185,9 +190,6 @@ int b_read (b_io_fd fd, char * buffer, int count)
 	// Operation: copy the request into caller's buffer.
 	if (count <= buffer_remaining)
 		{
-		// Check if the request is at the EOF and set block_offset accordingly
-		if (count == fcbArray[fd].fi->fileSize - fcbArray[fd].bytes_read)
-			fcbArray[fd].block_offset = -1;
 		return transfer_buffer(fd, buffer, count, fcbArray[fd].buffer_offset);
 		}
 
@@ -200,7 +202,7 @@ int b_read (b_io_fd fd, char * buffer, int count)
 	// If we are in the last block, simply copy the remaining buffer into 
 	// caller's buffer because the caller's request is greater than what is 
 	// left in the file.
-	if (fcbArray[fd].fi->fileSize - fcbArray[fd].bytes_read <= B_CHUNK_SIZE)
+	if (fcbArray[fd].fi->fileSize - fcbArray[fd].bytes_read + fcbArray[fd].buffer_offset <= B_CHUNK_SIZE)
 		{
 		fcbArray[fd].block_offset = -1; // EOF file reached.
 		return transfer_buffer(fd, buffer, buffer_remaining, fcbArray[fd].buffer_offset);
@@ -210,7 +212,7 @@ int b_read (b_io_fd fd, char * buffer, int count)
 
 	// First, copy whatever is remaining in the current block into caller's 
 	// buffer and recalculate the count find what else is left in the call.
-	bytes_copied += transfer_buffer(fd, buffer, buffer_remaining, 0);
+	bytes_copied += transfer_buffer(fd, buffer, buffer_remaining, fcbArray[fd].buffer_offset);
 	count -= buffer_remaining;
 
 	// Blocks needed is dependent on whether the caller's request is greater than what is
@@ -256,7 +258,9 @@ int b_read (b_io_fd fd, char * buffer, int count)
 // into the unused pool of file control blocks.
 int b_close (b_io_fd fd)
 	{
-		// for (int i = 0; i < )
+		free(fcbArray[fd].buffer);
+		fcbArray[fd].buffer = NULL;
+		fcbArray[fd].fi = NULL;
 		return 0;
 	//*** TODO ***:  Release any resources
 	}
@@ -271,7 +275,7 @@ int calc_blocks_needed (int bytes)
 // get_next_LBA_block reads in the next block into the b_fcb buffer and
 // increments the block_offset and resets the buffer_offset to 0, then returns
 // the number of bytes in the b_fcb buffer.
-// This function should actually be where the EOF should be calculated.
+// This function should probably be where the EOF should be calculated.
 int get_next_LBA_block(b_io_fd fd)
 	{
 	fcbArray[fd].bytes_in_buffer = LBAread(fcbArray[fd].buffer, 1, 
