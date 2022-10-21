@@ -8,7 +8,10 @@
 * File: b_io.c
 *
 * Description:
-* 
+* This is a buffered input output assignment.  This code initializes a file
+* control block array and loads files into it.  Then it loads and reads
+* the file into the file control block buffer.  Finally, it transfers
+* the data from the fcb buffer into the caller's buffer.
 *
 **************************************************************/
 #include <stdio.h>
@@ -194,7 +197,8 @@ int b_read (b_io_fd fd, char * buffer, int count)
 		bytes_remaining = B_CHUNK_SIZE - fcbArray[fd].buffer_offset;
 		}
 
-	// If requested bytes is less than what is remaining, just copy the requested amount
+	// Case: the caller's request is less than or equal to the buffer remaining
+	// Operation: copy the request into caller's buffer.
 	if (count <= bytes_remaining)
 		{
 		bytes_copied = transfer_buffer(fd, buffer, count, fcbArray[fd].buffer_offset);
@@ -209,11 +213,19 @@ int b_read (b_io_fd fd, char * buffer, int count)
 		return bytes_copied;
 		}
 
-	// 
+	/*
+	The following cases are all for when the request is greater than what is
+	remaining in buffer.
+	*/
+
+	// First, copy whatever is remaining in the current block into caller's 
+	// buffer and recalculate the count find what else is left in the call.
 	transfer_buffer(fd, buffer, bytes_remaining, fcbArray[fd].buffer_offset);
 	bytes_copied += bytes_remaining;
 	count -= bytes_remaining;
 
+	// Calculate if multiple full blocks are being called and copy full
+	// blocks to caller's buffer until no more full blocks are called
 	int blocks_needed = calc_blocks_needed(count);
 	for (int i = 0; i < blocks_needed; i++)
 		{
@@ -224,12 +236,12 @@ int b_read (b_io_fd fd, char * buffer, int count)
 		count -= B_CHUNK_SIZE;
 		}
 	
-	if (count != 0)
+	// If there is any amount left in the request, copy it over
+	if (count > 0)
 		{
 		get_next_LBA_block(fd);
 		transfer_buffer(fd, buffer, count, fcbArray[fd].buffer_offset);
 		bytes_copied += count;
-		count = 0;
 		}
 
 	return bytes_copied;
