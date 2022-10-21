@@ -8,7 +8,10 @@
 * File: b_io.c
 *
 * Description:
-* 
+* This is a buffered input output assignment.  This code initializes a file
+* control block array and loads files into it.  Then it loads and reads
+* the file into the file control block buffer.  Finally, it transfers
+* the data from the fcb buffer into the caller's buffer.
 *
 **************************************************************/
 #include <stdio.h>
