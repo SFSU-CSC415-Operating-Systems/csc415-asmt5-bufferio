@@ -120,7 +120,7 @@ b_io_fd b_open (char * filename, int flags)
 	fcbArray[fd].bufOff = 0;
 	fcbArray[fd].bufLen = 0;
 	fcbArray[fd].curBlock = 0;
-	fcbArray[fd].blockLen = (fi->fileSize + B_CHUNK_SIZE - 1);
+	fcbArray[fd].blockLen = (fi->fileSize + B_CHUNK_SIZE - 1)/B_CHUNK_SIZE;
 
 	return fd;
 	}
