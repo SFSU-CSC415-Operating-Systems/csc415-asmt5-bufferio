@@ -166,54 +166,54 @@ int b_read (b_io_fd fd, char * buffer, int count)
 			}
 		}
 	
-	int first, mid, last, numBlocksToCopy, bytesRead;
+	int part1, part2, part3, numBlocksToCopy, bytesRead;
 	if (availBytesInBuf >= count)
 		{
-    // first is the first section of the data
+    // part1 is the part1 section of the data
     // it is the amount of bytes that will fill up the available bytes in buffer
     // if the amount of data is less than the remaining amount in the buffer, we
     // just copy the entire amount into the buffer.
-		first = count;
-		mid = 0;
-    last = 0;
+		part1 = count;
+		part2 = 0;
+    part3 = 0;
 		}
   else
     {
-    // the file is too big, so the first section is just what is left in buffer
-    first = availBytesInBuf;
+    // the file is too big, so the part1 section is just what is left in buffer
+    part1 = availBytesInBuf;
 
-    // set the last section to all the bytes left in the file
-    last = count - availBytesInBuf;
+    // set the part3 section to all the bytes left in the file
+    part3 = count - availBytesInBuf;
 
-    // divide the last section by the chunk size to get the total number of
+    // divide the part3 section by the chunk size to get the total number of
     // complete blocks to copy and multiply by the chunk size to get the bytes
     // that those blocks occupy
-    numBlocksToCopy = last / B_CHUNK_SIZE;
-    mid = numBlocksToCopy * B_CHUNK_SIZE;
+    numBlocksToCopy = part3 / B_CHUNK_SIZE;
+    part2 = numBlocksToCopy * B_CHUNK_SIZE;
 
-    // finally subtract the complete bytes in mid from the total bytes left to
-    // get the last bytes to put in buffer
-    last = last - mid;
+    // finally subtract the complete bytes in part2 from the total bytes left to
+    // get the part3 bytes to put in buffer
+    part3 = part3 - part2;
     }
 
-  // memcopy first section
-  if (first > 0)
+  // memcopy part1 section
+  if (part1 > 0)
     {
-    memcpy(buffer, fcbArray[fd].buf + fcbArray[fd].bufOff, first);
-    fcbArray[fd].bufOff += first;
+    memcpy(buffer, fcbArray[fd].buf + fcbArray[fd].bufOff, part1);
+    fcbArray[fd].bufOff += part1;
     }
 
   // LBAread all the complete blocks into the buffer
-  if (mid > 0)
+  if (part2 > 0)
     {
-    bytesRead = LBAread(buffer + first, numBlocksToCopy, 
+    bytesRead = LBAread(buffer + part1, numBlocksToCopy, 
       fcbArray[fd].curBlock + fcbArray[fd].fi->location);
     fcbArray[fd].curBlock += numBlocksToCopy;
-    mid = bytesRead;
+    part2 = bytesRead;
     }
 
   // LBAread remaining block into the fcb buffer, and reset buffer offset
-  if (last > 0)
+  if (part3 > 0)
     {
     bytesRead = LBAread(fcbArray[fd].buf, 1, 
       fcbArray[fd].curBlock + fcbArray[fd].fi->location);
@@ -222,23 +222,23 @@ int b_read (b_io_fd fd, char * buffer, int count)
     fcbArray[fd].bufLen = bytesRead;
 
     // if the bytesRead is less than what is left in the calculated amount,
-    // reset last to the smaller amount
-    if (bytesRead < last)
+    // reset part3 to the smaller amount
+    if (bytesRead < part3)
       {
-      last = bytesRead;
+      part3 = bytesRead;
       }
     
     // if the number of bytes is more than zero, copy the fd buffer to the
     // buffer and set the offset to the position after the data amount.
-    if (last > 0)
+    if (part3 > 0)
       {
-      memcpy(buffer + first + mid, fcbArray[fd].buf + fcbArray[fd].bufOff, 
+      memcpy(buffer + part1 + part2, fcbArray[fd].buf + fcbArray[fd].bufOff, 
         fcbArray[fd].curBlock + fcbArray[fd].fi->location);
-      fcbArray[fd].bufOff += last;
+      fcbArray[fd].bufOff += part3;
       }
     }
 
-    return first + mid + last;
+    return part1 + part2 + part3;
 	}
 	
 // b_close frees and allocated memory and places the file control block back 
